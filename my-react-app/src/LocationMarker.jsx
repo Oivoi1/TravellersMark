@@ -3,11 +3,14 @@ import { useMapEvents, Marker, Popup } from "react-leaflet";
 import ReactDOM from "react-dom";
 
 const LocationMarker = () => {
-  const [markers, setMarkers] = useState([]); // Array of all markers
+  const [markers, setMarkers] = useState([]); // All markers
   const [filteredMarkers, setFilteredMarkers] = useState([]); // Filtered markers
   const [showDialog, setShowDialog] = useState(false);
+  const [editDialog, setEditDialog] = useState(false);
   const [clickedCoords, setClickedCoords] = useState(null);
-  const [filter, setFilter] = useState({ date: "", startDate: "", endDate: "", location: "" }); // Filters
+  const [currentMarkerIndex, setCurrentMarkerIndex] = useState(null); // Marker being modified
+
+  const [filter, setFilter] = useState({ date: "", startDate: "", endDate: "", location: "" });
 
   const [formData, setFormData] = useState({
     header: "",
@@ -33,25 +36,54 @@ const LocationMarker = () => {
       lng: clickedCoords.lng,
       ...formData,
     };
-
     setMarkers([...markers, newMarker]);
     resetForm();
+  };
+
+  // Delete a marker
+  const deleteMarker = (index) => {
+    setMarkers(markers.filter((_, i) => i !== index));
+  };
+
+  // Open edit dialog with marker details
+  const openEditDialog = (index) => {
+    const marker = markers[index];
+    setFormData({
+      header: marker.header,
+      date: marker.date,
+      paragraph: marker.paragraph,
+      location: marker.location,
+      image: marker.image,
+    });
+    setCurrentMarkerIndex(index);
+    setEditDialog(true);
+  };
+
+  // Confirm editing a marker
+  const confirmEditMarker = (e) => {
+    e.preventDefault();
+    const updatedMarkers = markers.map((marker, i) =>
+      i === currentMarkerIndex ? { ...marker, ...formData } : marker
+    );
+    setMarkers(updatedMarkers);
+    resetForm();
+    setEditDialog(false);
   };
 
   const resetForm = () => {
     setFormData({ header: "", date: "", paragraph: "", image: null, location: "" });
     setShowDialog(false);
+    setEditDialog(false);
     setClickedCoords(null);
   };
 
-  // Update filtered markers when filters change
+  // Update filtered markers when filters or markers change
   useEffect(() => {
     const filtered = markers.filter((marker) => {
       const matchesLocation = filter.location
         ? marker.location.toLowerCase().includes(filter.location.toLowerCase())
         : true;
 
-      // Date range filter
       const matchesDateRange =
         filter.startDate && filter.endDate
           ? marker.date >= filter.startDate && marker.date <= filter.endDate
@@ -113,64 +145,44 @@ const LocationMarker = () => {
             <p>Location: {marker.location}</p>
             <p>{marker.paragraph}</p>
             {marker.image && <img src={marker.image} alt="Marker" style={{ width: "100%" }} />}
+            <br />
+            <button onClick={() => openEditDialog(index)}>Modify</button>
+            <button onClick={() => deleteMarker(index)}>Delete</button>
           </Popup>
         </Marker>
       ))}
 
-      {/* Confirmation Dialog */}
+      {/* Add Marker Dialog */}
       {showDialog &&
         ReactDOM.createPortal(
           <div style={dialogStyles}>
             <form onSubmit={confirmAddMarker} style={formStyles}>
               <h2>Add Travel Details</h2>
-              <label>
-                Header:
-                <input
-                  type="text"
-                  name="header"
-                  value={formData.header}
-                  onChange={handleInputChange}
-                  required
-                />
-              </label>
-              <label>
-                Date:
-                <input
-                  type="date"
-                  name="date"
-                  value={formData.date}
-                  onChange={handleInputChange}
-                  required
-                />
-              </label>
-              <label>
-                Location:
-                <input
-                  type="text"
-                  name="location"
-                  value={formData.location}
-                  onChange={handleInputChange}
-                  placeholder="City/Country"
-                  required
-                />
-              </label>
-              <label>
-                Paragraph:
-                <textarea
-                  name="paragraph"
-                  value={formData.paragraph}
-                  onChange={handleInputChange}
-                  required
-                />
-              </label>
-              <label>
-                Picture:
-                <input type="file" accept="image/*" onChange={handleImageChange} />
-              </label>
+              <label>Header: <input type="text" name="header" onChange={handleInputChange} required /></label>
+              <label>Date: <input type="date" name="date" onChange={handleInputChange} required /></label>
+              <label>Location: <input type="text" name="location" onChange={handleInputChange} required /></label>
+              <label>Paragraph: <textarea name="paragraph" onChange={handleInputChange} required /></label>
+              <label>Picture: <input type="file" accept="image/*" onChange={handleImageChange} /></label>
               <button type="submit">Add</button>
-              <button type="button" onClick={resetForm}>
-                Cancel
-              </button>
+              <button type="button" onClick={resetForm}>Cancel</button>
+            </form>
+          </div>,
+          document.body
+        )}
+
+      {/* Edit Marker Dialog */}
+      {editDialog &&
+        ReactDOM.createPortal(
+          <div style={dialogStyles}>
+            <form onSubmit={confirmEditMarker} style={formStyles}>
+              <h2>Modify Travel Details</h2>
+              <label>Header: <input type="text" name="header" value={formData.header} onChange={handleInputChange} required /></label>
+              <label>Date: <input type="date" name="date" value={formData.date} onChange={handleInputChange} required /></label>
+              <label>Location: <input type="text" name="location" value={formData.location} onChange={handleInputChange} required /></label>
+              <label>Paragraph: <textarea name="paragraph" value={formData.paragraph} onChange={handleInputChange} required /></label>
+              <label>Picture: <input type="file" accept="image/*" onChange={handleImageChange} /></label>
+              <button type="submit">Save</button>
+              <button type="button" onClick={resetForm}>Cancel</button>
             </form>
           </div>,
           document.body
@@ -180,7 +192,7 @@ const LocationMarker = () => {
 };
 
 // Styles
-const dialogStyles = {
+const dialogStyles = { 
   position: "fixed",
   top: "20px",
   left: "20px",
@@ -208,5 +220,6 @@ const formStyles = {
   flexDirection: "column",
   gap: "10px",
 };
+
 
 export default LocationMarker;

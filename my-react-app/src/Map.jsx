@@ -33,21 +33,7 @@ function Map() {
           url='https://tile.openstreetmap.org/{z}/{x}/{y}.png'
         />
         <LocationMarker />
-        {markers.map(marker =>(
-          <Marker position={marker.geocode}>
-            <Popup>
-              <div>
-                <h2>
-                  {marker.popUp}
-                  {/* <h3>{marker.header}</h3>
-                  <p>{marker.date}</p>
-                  <p>{marker.paragraph}</p> */}
-                </h2>
-              </div>
-            </Popup>
-          </Marker>
-        ))
-        }
+
       </MapContainer>
     </>
   )
