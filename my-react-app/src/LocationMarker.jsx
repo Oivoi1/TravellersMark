@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useMapEvents, Marker, Popup } from "react-leaflet";
 import ReactDOM from "react-dom";
+import axios from "axios";
 
 const LocationMarker = () => {
   const [markers, setMarkers] = useState([]); // All markers
@@ -9,8 +10,34 @@ const LocationMarker = () => {
   const [editDialog, setEditDialog] = useState(false);
   const [clickedCoords, setClickedCoords] = useState(null);
   const [currentMarkerIndex, setCurrentMarkerIndex] = useState(null); // Marker being modified
+  const [position, setPosition] = useState(null);
+  const [city, setCity] = useState(""); // Store city name
+  const [loading, setLoading] = useState(false); // Loading state for geocoding
 
   const [filter, setFilter] = useState({ date: "", startDate: "", endDate: "", location: "" });
+
+    // Reverse geocoding API function
+    const fetchCityName = async (lat, lng) => {
+      const apiKey = "4216783b7ef646158f856e82235fba23"; // Replace with your API key
+      const url = `https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lng}&key=${apiKey}`;
+      try {
+        setLoading(true);
+        const response = await axios.get(url);
+        const results = response.data.results;
+        if (results.length > 0) {
+          const components = results[0].components;
+          const cityName = components.city || components.town || components.village || "Unknown location";
+          setCity(cityName);
+        } else {
+          setCity("Unknown location");
+        }
+      } catch (error) {
+        console.error("Error fetching city name:", error);
+        setCity("Error retrieving location");
+      } finally {
+        setLoading(false);
+      }
+    };
 
   const [formData, setFormData] = useState({
     header: "",
@@ -23,10 +50,14 @@ const LocationMarker = () => {
   // Map click event
   useMapEvents({
     click(e) {
+      const { lat, lng } = e.latlng;
+      setPosition(e.latlng);
+      fetchCityName(lat, lng); // Fetch city name when clicking the map
       setClickedCoords(e.latlng);
       setShowDialog(true);
     },
   });
+
 
   // Confirm adding a marker
   const confirmAddMarker = (e) => {
@@ -75,6 +106,7 @@ const LocationMarker = () => {
     setShowDialog(false);
     setEditDialog(false);
     setClickedCoords(null);
+    setCity("");
   };
 
   // Update filtered markers when filters or markers change
@@ -140,15 +172,22 @@ const LocationMarker = () => {
       {filteredMarkers.map((marker, index) => (
         <Marker key={index} position={[marker.lat, marker.lng]}>
           <Popup>
-            <h3>{marker.header}</h3>
-            <p>Date: {marker.date}</p>
-            <p>Location: {marker.location}</p>
-            <p>{marker.paragraph}</p>
-            {marker.image && <img src={marker.image} alt="Marker" style={{ width: "100%" }} />}
-            <br />
-            <button onClick={() => openEditDialog(index)}>Modify</button>
-            <button onClick={() => deleteMarker(index)}>Delete</button>
+            <div className="popup-container">
+              <h3 className="popup-header">{marker.header}</h3>
+              <p className="popup-date">Date: {marker.date}</p>
+              <p className="popup-location">Location: {marker.location}</p>
+              <p className="popup-paragraph">{marker.paragraph}</p>
+              {marker.image && <img src={marker.image} alt="Marker" className="popup-image" />}
+              <br />
+              <button className="popup-button delete" onClick={() => deleteMarker(index)}>
+                Delete
+              </button>
+              <button className="popup-button" onClick={() => openEditDialog(index)}>
+                Modify
+              </button>
+            </div>
           </Popup>
+
         </Marker>
       ))}
 
@@ -160,7 +199,7 @@ const LocationMarker = () => {
               <h2>Add Travel Details</h2>
               <label>Header: <input type="text" name="header" onChange={handleInputChange} required /></label>
               <label>Date: <input type="date" name="date" onChange={handleInputChange} required /></label>
-              <label>Location: <input type="text" name="location" onChange={handleInputChange} required /></label>
+              <label>Location: <input type="text" name="location" value={formData.location || city || ""} onChange={handleInputChange} required /></label>
               <label>Paragraph: <textarea name="paragraph" onChange={handleInputChange} required /></label>
               <label>Picture: <input type="file" accept="image/*" onChange={handleImageChange} /></label>
               <button type="submit">Add</button>
@@ -192,7 +231,7 @@ const LocationMarker = () => {
 };
 
 // Styles
-const dialogStyles = { 
+const dialogStyles = {
   position: "fixed",
   top: "20px",
   left: "20px",
@@ -219,6 +258,14 @@ const formStyles = {
   display: "flex",
   flexDirection: "column",
   gap: "10px",
+};
+
+const popUpStyles = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+  padding: "20px",
+  backgroundColor: "black"
 };
 
 
