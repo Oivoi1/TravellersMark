@@ -15,6 +15,40 @@ const LocationMarker = () => {
   const [filter, setFilter] = useState({ date: "", startDate: "", endDate: "", location: "" });
 
 
+  // Update filtered markers when filters or markers change
+  useEffect(() => {
+    const filtered = markers.filter((marker) => {
+      const matchesLocation = filter.location
+        ? marker.location.toLowerCase().includes(filter.location.toLowerCase())
+        : true;
+
+      const matchesDateRange =
+        filter.startDate && filter.endDate
+          ? marker.date >= filter.startDate && marker.date <= filter.endDate
+          : true;
+
+      return matchesLocation && matchesDateRange;
+    });
+
+    setFilteredMarkers(filtered);
+  }, [filter, markers]);
+
+
+  useEffect(() => {
+    if (city && !formData.location) {
+      setFormData((prev) => ({
+        ...prev,
+        location: city,
+      }));
+    }
+  }, [city]);
+
+
+  useEffect(() => {
+    console.log("Updated markers state:", markers);
+  }, [markers]);
+
+
   useEffect(() => {
     const fetchMarkers = async () => {
       try {
@@ -34,19 +68,55 @@ const LocationMarker = () => {
   }, []);
 
 
-  useEffect(() => {
-    if (city && !formData.location) {
-      setFormData((prev) => ({
-        ...prev,
-        location: city,
-      }));
+  const fetchMarkers = async () => {
+    try {
+      const response = await fetch("http://localhost/markers_api/get_markers.php");
+      const data = await response.json();
+      setMarkers(data); // Update markers state
+      setFilteredMarkers(data); // Sync filtered markers
+    } catch (error) {
+      console.error("Error fetching markers:", error);
     }
-  }, [city]);
+  };
+
+
+  const fetchMarkerDetails = async (id) => {
+    if (!id) {
+      console.error("Invalid marker ID");
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost/markers_api/get_marker.php?id=${id}`);
+      const marker = await response.json();
+
+      if (marker.error) {
+        console.error("Error fetching marker:", marker.error);
+      } else {
+        console.log("Fetched marker details:", marker);
+        setFormData({
+          id: marker.id,
+          header: marker.header,
+          date: marker.date,
+          paragraph: marker.paragraph,
+          location: marker.location,
+          lat: marker.lat,
+          lng: marker.lng,
+          image: marker.image,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching marker details:", error);
+    }
+  };
+
 
 
   // Reverse geocoding API function
   const fetchCityName = async (lat, lng) => {
-    const apiKey = "4216783b7ef646158f856e82235fba23"; // Replace with your API key
+    const apiKey = import.meta.env.VITE_OPENCAGE_KEY;
+    console.log(apiKey)
+
     const url = `https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lng}&key=${apiKey}`;
     try {
       setLoading(true);
@@ -98,10 +168,9 @@ const LocationMarker = () => {
       date: formData.date,
       location: formData.location,
       paragraph: formData.paragraph,
-      image: formData.image || null, // Handle optional image
+      image: formData.image || null,
     };
 
-    // Save to backend
     try {
       const response = await fetch("http://localhost/markers_api/add_marker.php", {
         method: "POST",
@@ -113,7 +182,8 @@ const LocationMarker = () => {
 
       const result = await response.json();
       if (result.status === "success") {
-        setMarkers([...markers, newMarker]); // Update local state
+        // Re-fetch markers after adding a new one
+        fetchMarkers();
         resetForm();
       } else {
         console.error(result.message);
@@ -124,38 +194,64 @@ const LocationMarker = () => {
   };
 
 
-  // Delete a marker
-  const deleteMarker = (index) => {
-    setMarkers(markers.filter((_, i) => i !== index));
+  const deleteMarker = async (id) => {
+    try {
+      const response = await fetch("http://localhost/markers_api/delete_marker.php", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+      const result = await response.json();
+
+      if (result.status === "success") {
+        console.log(result.message);
+
+        // Remove the marker from local state
+        setMarkers((prevMarkers) => prevMarkers.filter((marker) => marker.id !== id));
+      } else {
+        console.error("Server error:", result.message);
+      }
+    } catch (error) {
+      console.error("Error deleting marker:", error);
+    }
   };
 
 
-  // Open edit dialog with marker details
+  const handleDelete = (id) => {
+    if (window.confirm("Are you sure you want to delete this marker?")) {
+      deleteMarker(id);
+    }
+  };
+
+
   const openEditDialog = (index) => {
     const marker = markers[index];
-    setFormData({
-      id: marker.id,
-      lat: marker.lat,
-      lng: marker.lng,
-      header: marker.header,
-      date: marker.date,
-      paragraph: marker.paragraph,
-      location: marker.location,
-      image: marker.image,
-    });
+
+    if (!marker || !marker.id) {
+      console.error("Marker ID is missing or undefined.");
+      return;
+    }
+
+    console.log("Editing marker with ID:", marker.id);
+    fetchMarkerDetails(marker.id);
+
     setCurrentMarkerIndex(index);
     setEditDialog(true);
   };
 
 
+
+  // Confirm editing a marker
   const confirmEditMarker = async (e) => {
     e.preventDefault();
-  
+
     if (currentMarkerIndex === null) {
       console.error("No marker selected for editing.");
       return;
     }
-  
+
     const updatedMarker = {
       id: formData.id,
       lat: formData.lat,
@@ -166,7 +262,7 @@ const LocationMarker = () => {
       paragraph: formData.paragraph,
       image: formData.image || null,
     };
-  
+
     try {
       const response = await fetch("http://localhost/markers_api/update_marker.php", {
         method: "POST",
@@ -175,15 +271,12 @@ const LocationMarker = () => {
         },
         body: JSON.stringify(updatedMarker),
       });
-  
+
       const result = await response.json();
+
       if (result.status === "success") {
-        // Update local markers state
-        setMarkers((prevMarkers) =>
-          prevMarkers.map((marker) =>
-            marker.id === updatedMarker.id ? updatedMarker : marker
-          )
-        );
+        // Re-fetch markers to ensure state consistency
+        fetchMarkers();
         setEditDialog(false);
         resetForm();
       } else {
@@ -193,8 +286,7 @@ const LocationMarker = () => {
       console.error("Error updating marker:", error);
     }
   };
-  
-  
+
 
   const resetForm = () => {
     setFormData({ header: "", date: "", paragraph: "", image: null, location: "" });
@@ -204,23 +296,6 @@ const LocationMarker = () => {
     setCity("");
   };
 
-  // Update filtered markers when filters or markers change
-  useEffect(() => {
-    const filtered = markers.filter((marker) => {
-      const matchesLocation = filter.location
-        ? marker.location.toLowerCase().includes(filter.location.toLowerCase())
-        : true;
-
-      const matchesDateRange =
-        filter.startDate && filter.endDate
-          ? marker.date >= filter.startDate && marker.date <= filter.endDate
-          : true;
-
-      return matchesLocation && matchesDateRange;
-    });
-
-    setFilteredMarkers(filtered);
-  }, [filter, markers]);
 
   // Handle filter input changes
   const handleFilterChange = (e) => {
@@ -274,7 +349,7 @@ const LocationMarker = () => {
               <p className="popup-paragraph">{marker.paragraph}</p>
               {marker.image && <img src={marker.image} alt="Marker" className="popup-image" />}
               <br />
-              <button className="popup-button delete" onClick={() => deleteMarker(index)}>
+              <button className="popup-button delete" onClick={() => handleDelete(marker.id)}>
                 Delete
               </button>
               <button className="popup-button" onClick={() => openEditDialog(index)}>
@@ -313,10 +388,10 @@ const LocationMarker = () => {
               style={formStyles}
             >
               <h2>Modify Travel Details</h2>
-              <label>Header: <input type="text" name="header" value={formData.header} onChange={handleInputChange} required /></label>
-              <label>Date: <input type="date" name="date" value={formData.date} onChange={handleInputChange} required /></label>
-              <label>Location: <input type="text" name="location" value={formData.location} onChange={handleInputChange} required /></label>
-              <label>Paragraph: <textarea name="paragraph" value={formData.paragraph} onChange={handleInputChange} required /></label>
+              <label>Header: <input type="text" name="header" value={formData.header || ""} onChange={handleInputChange} required /></label>
+              <label>Date: <input type="date" name="date" value={formData.date || ""} onChange={handleInputChange} required /></label>
+              <label>Location: <input type="text" name="location" value={formData.location || ""} onChange={handleInputChange} required /></label>
+              <label>Paragraph: <textarea name="paragraph" value={formData.paragraph || ""} onChange={handleInputChange} required /></label>
               <label>Picture: <input type="file" accept="image/*" onChange={handleImageChange} /></label>
               <button type="submit">Save</button>
               <button type="button" onClick={resetForm}>Cancel</button>
