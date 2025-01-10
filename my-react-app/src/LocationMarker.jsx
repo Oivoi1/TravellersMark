@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from "react";
 import { useMapEvents, Marker, Popup } from "react-leaflet";
 import ReactDOM from "react-dom";
+import FilterForm from "./FilterForm"; // Import FilterForm
+import SearchBar from "./SearchBar";
 import axios from "axios";
+import { useMap } from "react-leaflet";
 
 const LocationMarker = () => {
   const [markers, setMarkers] = useState([]); // All markers
   const [filteredMarkers, setFilteredMarkers] = useState([]); // Filtered markers
+  const [filter, setFilter] = useState({ date: "", startDate: "", endDate: "", location: "" });
   const [showDialog, setShowDialog] = useState(false);
   const [editDialog, setEditDialog] = useState(false);
   const [clickedCoords, setClickedCoords] = useState(null);
   const [currentMarkerIndex, setCurrentMarkerIndex] = useState(null); // Marker being modified
   const [city, setCity] = useState(""); // Store city name
   const [loading, setLoading] = useState(false); // Loading state for geocoding
-  const [filter, setFilter] = useState({ date: "", startDate: "", endDate: "", location: "" });
-
+  const [isAddMode, setIsAddMode] = useState(false);
+  const map = useMap(); // Access the map instance
 
   // Update filtered markers when filters or markers change
   useEffect(() => {
@@ -115,7 +119,6 @@ const LocationMarker = () => {
   // Reverse geocoding API function
   const fetchCityName = async (lat, lng) => {
     const apiKey = import.meta.env.VITE_OPENCAGE_KEY;
-    console.log(apiKey)
 
     const url = `https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lng}&key=${apiKey}`;
     try {
@@ -150,6 +153,11 @@ const LocationMarker = () => {
   // Map click event
   useMapEvents({
     click(e) {
+      // Ignore clicks if interacting with other UI elements
+      const clickedElement = e.originalEvent.target;
+      if (clickedElement.closest && clickedElement.closest(".filter-container")) {
+        return; // Ignore clicks on the filter form
+      }
       const { lat, lng } = e.latlng;
       fetchCityName(lat, lng); // Fetch city name when clicking the map
       setClickedCoords(e.latlng);
@@ -297,49 +305,56 @@ const LocationMarker = () => {
   };
 
 
-  // Handle filter input changes
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    setFilter({ ...filter, [name]: value });
-  };
-
   // Handle form input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
   };
 
-  const handleImageChange = (e) => {
-    setFormData({ ...formData, image: URL.createObjectURL(e.target.files[0]) });
+  const handleImageChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    try {
+      const response = await fetch("http://localhost/markers_api/upload_image.php", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (result.status === "success") {
+        console.log("Uploaded image path:", result.filePath);
+        setFormData((prev) => ({ ...prev, image: result.filePath })); // Save file path
+      } else {
+        console.error("Error uploading image:", result.message);
+      }
+    } catch (error) {
+      console.error("Error uploading image:", error);
+    }
   };
+
 
   return (
     <>
-      {/* Filter Form */}
-      <div style={filterStyles}>
-        <h3>Filter Travels</h3>
-        <input
-          type="date"
-          name="startDate"
-          placeholder="Start Date"
-          onChange={handleFilterChange}
-        />
-        <input
-          type="date"
-          name="endDate"
-          placeholder="End Date"
-          onChange={handleFilterChange}
-        />
-        <input
-          type="text"
-          name="location"
-          placeholder="Search by location (city/country)"
-          onChange={handleFilterChange}
-        />
-      </div>
 
-      {/* Render filtered markers */}
-      {filteredMarkers.map((marker, index) => (
+
+
+      <button
+        onClick={() => setIsAddMode((prev) => !prev)}
+        style={toggleButtonStyles}
+      >
+        {isAddMode ? "View Markers" : "Add Marker"}
+      </button>
+
+      {isAddMode ? (
+        <>
+                <>
+          {/* View Mode */}
+                {/* Render filtered markers */}
+      {markers.map((marker, index) => (
         <Marker key={index} position={[marker.lat, marker.lng]}>
           <Popup>
             <div className="popup-container">
@@ -347,21 +362,35 @@ const LocationMarker = () => {
               <p className="popup-date">Date: {marker.date}</p>
               <p className="popup-location">Location: {marker.location}</p>
               <p className="popup-paragraph">{marker.paragraph}</p>
-              {marker.image && <img src={marker.image} alt="Marker" className="popup-image" />}
+              {marker.image && (
+                <img
+                  src={`http://localhost/markers_api/${marker.image}`} // Use the uploaded image path
+                  alt="Marker"
+                  className="popup-image"
+                  style={{ width: "100%", height: "auto" }}
+                />
+              )}
               <br />
               <button className="popup-button delete" onClick={() => handleDelete(marker.id)}>
                 Delete
               </button>
-              <button className="popup-button" onClick={() => openEditDialog(index)}>
+              {isAddMode ? "" : <button className="popup-button" onClick={() => openEditDialog(index)}>
                 Modify
-              </button>
+              </button>}
+
             </div>
           </Popup>
 
         </Marker>
-      ))}
 
-      {/* Add Marker Dialog */}
+      ))}
+        </>
+          {/* Add Mode */}
+          <SearchBar />
+          <div>
+            <p>Click the map to add a new marker.</p>
+          </div>
+                {/* Add Marker Dialog */}
       {showDialog &&
         ReactDOM.createPortal(
           <div style={dialogStyles}>
@@ -378,7 +407,42 @@ const LocationMarker = () => {
           </div>,
           document.body
         )}
+        
 
+        </>
+      ) : (
+        <>
+          {/* View Mode */}
+      <FilterForm filter={filter} setFilter={setFilter} markers={markers} map={map} />
+      {/* Render filtered markers */}
+      {filteredMarkers.map((marker, index) => (
+        <Marker key={index} position={[marker.lat, marker.lng]}>
+          <Popup>
+            <div className="popup-container">
+              <h3 className="popup-header">{marker.header}</h3>
+              <p className="popup-date">Date: {marker.date}</p>
+              <p className="popup-location">Location: {marker.location}</p>
+              <p className="popup-paragraph">{marker.paragraph}</p>
+              {marker.image && (
+                <img
+                  src={`http://localhost/markers_api/${marker.image}`} // Use the uploaded image path
+                  alt="Marker"
+                  className="popup-image"
+                  style={{ width: "100%", height: "auto" }}
+                />
+              )}
+              <br />
+              <button className="popup-button delete" onClick={() => handleDelete(marker.id)}>
+                Delete
+              </button>
+              <button className="popup-button" onClick={() => openEditDialog(index)}>
+                Modify
+              </button>
+            </div>
+          </Popup>
+
+        </Marker>
+      ))}
       {/* Edit Marker Dialog */}
       {editDialog &&
         ReactDOM.createPortal(
@@ -399,6 +463,9 @@ const LocationMarker = () => {
           </div>,
           document.body
         )}
+        </>
+      )}
+
     </>
   );
 };
@@ -440,6 +507,31 @@ const popUpStyles = {
   padding: "20px",
   backgroundColor: "black"
 };
+
+const toggleButtonStyles = {
+  position: "fixed",
+  top: "20px",
+  right: "20px",
+  padding: "10px 20px",
+  backgroundColor: "#007bff", // Bootstrap blue
+  color: "#fff",
+  border: "none",
+  borderRadius: "5px",
+  cursor: "pointer",
+  fontSize: "16px",
+  boxShadow: "0 2px 5px rgba(0, 0, 0, 0.2)",
+  zIndex: 1000,
+  transition: "background-color 0.3s ease",
+};
+
+toggleButtonStyles[":hover"] = {
+  backgroundColor: "#0056b3", // Darker blue on hover
+};
+
+toggleButtonStyles[":active"] = {
+  transform: "scale(0.98)", // Slight shrink effect on click
+};
+
 
 
 export default LocationMarker;
